@@ -87,11 +87,15 @@ additional worker processes load additional model copies.
 | `GET /healthz` | Process health; it does not claim the model is installed |
 | `POST /v1/sync` | Authenticated server sends the site's current public snapshot |
 | `POST /v1/chat` | Authenticated server sends `message`, optional `history`, explicit `learning_consent`, and optional fresh `public_data` |
+| `POST /v1/chat/jobs` | Recommended for CPU inference; same body, immediate job ID |
+| `GET /v1/chat/jobs/JOB_ID` | Authenticated polling; pending, completed with result, or failed |
 | `POST /v1/ready` | Authenticated empty JSON object verifies/loads the model and reports protocol capabilities |
 
 All POST routes require `Authorization: Bearer <site-token>` and JSON. The token chooses
 the site; sending another `site_id` in a body cannot access that site's index or memory.
 Keep a same-origin proxy in your website. This service is not a browser CORS endpoint.
+Use the job API to avoid keeping a slow CPU request open through web-host proxies.
+Full polling, retention and concurrency details are in [service.md](service.md).
 Prefer sending `public_data` with each chat so it uses that request's current prices.
 Alternatively refresh `/v1/sync` after catalogue changes, through a publish webhook,
 or before a price-sensitive chat. Indexing is explicit; this project does not secretly run background

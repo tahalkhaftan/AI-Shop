@@ -59,6 +59,25 @@ for each site. The token selects the site independently of body fields.
 
 ## Send a chat from the website backend
 
+For CPU inference, use `POST /v1/chat/jobs` with the same JSON body below. It
+returns HTTP 202 and a random `job_id` immediately. Poll authenticated
+`GET /v1/chat/jobs/JOB_ID` about every four seconds. A pending reply has
+`status: "pending"`; a completed reply has `status: "completed"` and the normal
+response in `result`. Failures have `status: "failed"` and a machine error code.
+Do not resubmit the message while polling. Every network request is short, so a
+slow generation does not hold an HTTP connection open through hosting proxies.
+
+Only one generation job is accepted at a time; there is no unbounded queue.
+The requesting site's token is required for both submission and polling, and
+another site's token cannot read the result. At most 64 results are retained,
+in RAM only, for ten minutes after completion. No job payload/chat archive is
+written to disk. Restarting the AI process loses pending jobs and results.
+The client gives up after twenty minutes; CPU time remains bounded by model
+token limits. A timed-out message is never automatically regenerated.
+
+The synchronous route below remains available for existing clients, but can
+exceed HTTP proxy timeouts on a small CPU host.
+
 POST `/v1/chat` with `Authorization: Bearer <site-token>` and JSON:
 
 ```json
@@ -97,7 +116,7 @@ generation may still be running.
 - `GET /healthz`: process health only.
 - Authenticated `POST /v1/ready` with `{}`: loads/verifies the model and returns
   `ready`, `service`, `protocol`, the registered `origin` and
-  `capabilities: ["chat_public_data"]`. A 503 means the model is unavailable.
+  `capabilities: ["chat_public_data", "chat_jobs"]`. A 503 means the model is unavailable.
 - Missing/wrong token returns 401; wrong origin returns 403.
 - Public index and reviewed learning live on the AI host at
   `AI_SHOP_DATA_DIR/knowledge.sqlite3`. Run `ai-shop pending`, `approve` and
