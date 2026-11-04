@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-shop"
+version = "0.1.0"
+description = "Self-hosted, site-scoped shopping assistant with a local language model"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = []
+
+[project.optional-dependencies]
+local = ["llama-cpp-python==0.3.36"]
+
+[project.scripts]
+ai-shop = "ai_shop.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ai_shop*"]
+
+[tool.setuptools.package-data]
+ai_shop = ["resources/*.json", "static/*.js"]

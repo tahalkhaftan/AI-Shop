@@ -1,0 +1,12 @@
+{
+  "brand": "Example Store",
+  "currency": {"code": "USD", "decimals": 2, "label": "US dollars"},
+  "categories": ["Tea", "Coffee"],
+  "public_info": {"hours": "Monday to Friday, 09:00–17:00", "shipping": "See the public delivery page."},
+  "products": [
+    {"id": "tea-black", "name": "Black tea", "url": "/products/black-tea", "category": "Tea",
+     "description": "Black tea in two package sizes.", "available": true,
+     "variants": [{"unit": "250 g", "price_minor": 1000}, {"unit": "500 g", "price_minor": 1800}]}
+  ],
+  "pages": [{"url": "/delivery", "title": "Delivery", "text": "Orders can be collected at the store. Reusable packaging is available on request."}]
+}
