@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import threading
 import time
 from urllib.parse import urlsplit
@@ -15,12 +16,18 @@ from .knowledge import KnowledgeBase
 
 
 def load_sites(path, knowledge):
-    data = json.loads(Path(path).read_text(encoding='utf-8'))
+    data = json.loads(Path(path).read_text(encoding='utf-8')) if path else [{
+        'site_id': os.environ.get('AI_SHOP_SITE_ID', 'default'),
+        'origin': os.environ.get('AI_SHOP_SITE_ORIGIN', ''),
+        'token_env': 'AI_SHOP_SITE_TOKEN',
+    }]
     if not isinstance(data, list) or not 1 <= len(data) <= 50: raise AIShopError('invalid_site_configuration')
     sites = []; keys = set(); ids = set()
     for item in data:
+        if not isinstance(item, dict) or not all(isinstance(item.get(k), str) and item[k] for k in ('site_id', 'origin', 'token_env')):
+            raise AIShopError('invalid_site_configuration')
         key = os.environ.get(item['token_env'], '')
-        if len(key) < 32 or not key.isascii() or key in keys or item['site_id'] in ids: raise AIShopError('invalid_site_configuration')
+        if not re.fullmatch(r'[!-~]{32,256}', key) or key in keys or item['site_id'] in ids: raise AIShopError('invalid_site_configuration')
         keys.add(key); ids.add(item['site_id'])
         sites.append((key, Assistant(site_id=item['site_id'], origin=item['origin'], knowledge=knowledge)))
     return sites
@@ -54,7 +61,7 @@ class Service(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'AI-Shop/0.1'
+    server_version = 'AI-Shop/0.2'
     def log_message(self, *args):
         # No prompt, response, Authorization header or chat history logging.
         pass
@@ -87,32 +94,47 @@ class Handler(BaseHTTPRequestHandler):
             request_origin = self.headers.get('Origin')
             if request_origin and request_origin != selected.origin: raise AIShopError('foreign_origin', 403)
             path = urlsplit(self.path).path
-            if path not in ('/v1/chat', '/v1/sync'): raise AIShopError('not_found', 404)
+            if path not in ('/v1/chat', '/v1/sync', '/v1/ready'): raise AIShopError('not_found', 404)
             self.server.allowance(selected.site_id)
             if self.headers.get('Content-Type', '').split(';')[0] != 'application/json': raise AIShopError('json_required', 415)
             try: size = int(self.headers.get('Content-Length', '0'))
             except ValueError: raise AIShopError('invalid_body')
-            limit = 5_000_000 if path == '/v1/sync' else 100_000
+            # Chat may carry the current public catalogue in the same request.
+            limit = 5_000_000 if path in ('/v1/chat', '/v1/sync') else 1_000
             if not 0 < size <= limit: raise AIShopError('body_too_large', 413)
-            try: data = json.loads(self.rfile.read(size))
+            if self.headers.get('Transfer-Encoding'): raise AIShopError('invalid_body')
+            raw = self.rfile.read(size)
+            if len(raw) != size: raise AIShopError('invalid_body')
+            try: data = json.loads(raw)
             except (ValueError, UnicodeError): raise AIShopError('invalid_json')
             if not isinstance(data, dict): raise AIShopError('invalid_body')
             # Site identity comes solely from the server-side token mapping.
             # A caller cannot select another site_id through the request body.
-            if path == '/v1/sync':
+            if path == '/v1/ready':
+                selected.engine.load()
+                result = {'ready': True, 'service': 'AI-Shop', 'protocol': 1,
+                          'origin': selected.origin, 'capabilities': ['chat_public_data']}
+            elif path == '/v1/sync':
+                if data.get('origin', selected.origin) != selected.origin: raise AIShopError('foreign_origin', 403)
                 snapshot = selected.sync_public_data(data)
                 result = {'indexed': True, 'products': len(snapshot['products']), 'pages': len(snapshot['pages'])}
             else:
-                result = selected.answer(data.get('message'), data.get('history', []), learning_consent=data.get('learning_consent') is True)
+                if 'public_data' in data and not isinstance(data['public_data'], dict): raise AIShopError('invalid_snapshot')
+                if 'public_data' in data and data['public_data'].get('origin', selected.origin) != selected.origin: raise AIShopError('foreign_origin', 403)
+                result = selected.answer(data.get('message'), data.get('history', []),
+                                         public_data=data.get('public_data'), learning_consent=data.get('learning_consent') is True)
             self.send(result)
         except AIShopError as error: self.send({'error': error.code}, error.status)
         except (BrokenPipeError, ConnectionResetError): pass
         except Exception: self.send({'error': 'service_error'}, 500)
 
 
-def serve(config, *, host='127.0.0.1', port=8090, data_dir='private'):
+def serve(config=None, *, host='127.0.0.1', port=8090, data_dir='private', preload=False):
     knowledge = KnowledgeBase(Path(data_dir) / 'knowledge.sqlite3')
-    server = Service((host, port), load_sites(config, knowledge))
+    sites = load_sites(config, knowledge)
+    if preload:
+        for _, assistant in sites: assistant.engine.load()
+    server = Service((host, port), sites)
     print(f'AI-Shop listening on {host}:{port}. Use a TLS reverse proxy for public deployment.', flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass

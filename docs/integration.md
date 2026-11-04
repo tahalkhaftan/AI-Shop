@@ -1,6 +1,9 @@
 # Connect a website
 
-## Python SDK: recommended
+For a separately hosted model, start with [the API service guide](service.md).
+The website does not need to install this SDK when using HTTP.
+
+## Python SDK: optional in-process integration
 
 Install the project into the same Python environment as your application:
 
@@ -61,7 +64,7 @@ unpublished, private and staff-only products. Private routes and foreign URLs ar
 and `learning` are returned. Render text as text, links from validated `url` fields,
 and amounts from integer `amount_minor` plus `decimals`. Do not interpret model prose as HTML.
 
-## Non-Python applications: self-hosted HTTP service
+## Any application: self-hosted HTTP service
 
 1. Install AI-Shop and download the model on your own AI host.
 2. Copy `examples/sites.example.json` to ignored `private/sites.json`.
@@ -83,13 +86,15 @@ additional worker processes load additional model copies.
 |---|---|
 | `GET /healthz` | Process health; it does not claim the model is installed |
 | `POST /v1/sync` | Authenticated server sends the site's current public snapshot |
-| `POST /v1/chat` | Authenticated server sends `message`, optional `history`, explicit `learning_consent` |
+| `POST /v1/chat` | Authenticated server sends `message`, optional `history`, explicit `learning_consent`, and optional fresh `public_data` |
+| `POST /v1/ready` | Authenticated empty JSON object verifies/loads the model and reports protocol capabilities |
 
-Both POST routes require `Authorization: Bearer <site-token>` and JSON. The token chooses
+All POST routes require `Authorization: Bearer <site-token>` and JSON. The token chooses
 the site; sending another `site_id` in a body cannot access that site's index or memory.
 Keep a same-origin proxy in your website. This service is not a browser CORS endpoint.
-Refresh `/v1/sync` after catalogue changes, through your publish webhook, or before a
-price-sensitive chat. Indexing is explicit; this project does not secretly run background
+Prefer sending `public_data` with each chat so it uses that request's current prices.
+Alternatively refresh `/v1/sync` after catalogue changes, through a publish webhook,
+or before a price-sensitive chat. Indexing is explicit; this project does not secretly run background
 jobs or guarantee live prices if the owner never refreshes a cached snapshot.
 
 ## Optional widget

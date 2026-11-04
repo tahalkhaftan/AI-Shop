@@ -145,8 +145,10 @@ class Assistant:
 
     def answer(self, message, history=None, *, public_data=None, learning_consent=False):
         message, history = validate_conversation(message, [] if history is None else history)
-        if public_data is not None: self.sync_public_data(public_data)
-        catalogue = safe_catalogue(self.knowledge.snapshot(self.site_id))
+        # Keep this request's validated prices even if another request syncs
+        # the same site while generation is starting.
+        snapshot = self.sync_public_data(public_data) if public_data is not None else self.knowledge.snapshot(self.site_id)
+        catalogue = safe_catalogue(snapshot)
         def neutral():
             reply = respectful_reply(message)
             return {'reply': reply, 'parts': [{'type': 'text', 'text': reply}], 'products': [],

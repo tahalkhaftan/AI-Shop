@@ -43,6 +43,13 @@ For dynamic shops, use a structured feed or an application adapter so prices and
 availability are current. A crawler cannot reliably reconstruct every JavaScript
 application or infer authoritative prices from arbitrary prose.
 
+## Run as an independent API
+
+Keep the model on a separate AI host and send messages from your website backend.
+The service accepts the current public catalogue with each chat request, supports
+per-site secret tokens, and has an authenticated model-readiness check. Follow
+[the standalone API setup](docs/service.md). The Python SDK remains optional.
+
 ## Integration and operation
 
 - [Persian setup guide](README_FA.md)

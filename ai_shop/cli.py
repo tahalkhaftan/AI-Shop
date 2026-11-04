@@ -13,9 +13,10 @@ def main():
     parser = argparse.ArgumentParser(prog='ai-shop', description='Self-hosted local-model website assistant')
     sub = parser.add_subparsers(dest='command', required=True)
     model = sub.add_parser('download-model'); model.add_argument('--output')
-    serve = sub.add_parser('serve'); serve.add_argument('--config', required=True)
-    serve.add_argument('--host', default='127.0.0.1'); serve.add_argument('--port', type=int, default=8090)
-    serve.add_argument('--data-dir', default='private')
+    serve = sub.add_parser('serve'); serve.add_argument('--config', help='Multi-site JSON; omit to use AI_SHOP_SITE_* environment variables')
+    serve.add_argument('--host', default='127.0.0.1'); serve.add_argument('--port', type=int, default=int(os.environ.get('PORT', '8090')))
+    serve.add_argument('--data-dir', default=os.environ.get('AI_SHOP_DATA_DIR', 'private'))
+    serve.add_argument('--preload', action='store_true', help='Load the model before accepting requests; fail startup if it is unavailable')
     for name in ('index', 'chat', 'pending', 'approve', 'forget'):
         command = sub.add_parser(name)
         command.add_argument('--site', required=True); command.add_argument('--origin', required=True)
@@ -34,7 +35,7 @@ def main():
             download(destination); return
         if args.command == 'serve':
             from .service import serve
-            serve(args.config, host=args.host, port=args.port, data_dir=args.data_dir); return
+            serve(args.config, host=args.host, port=args.port, data_dir=args.data_dir, preload=args.preload); return
         knowledge = KnowledgeBase(Path(args.data_dir) / 'knowledge.sqlite3')
         assistant = Assistant(site_id=args.site, origin=args.origin, knowledge=knowledge)
         if args.command == 'index':

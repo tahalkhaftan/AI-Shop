@@ -4,5 +4,5 @@ from .knowledge import KnowledgeBase
 from .engine import LocalEngine, get_engine
 from .errors import AIShopError
 
-__version__ = '0.1.1'
+__version__ = '0.2.0'
 __all__ = ['Assistant', 'KnowledgeBase', 'LocalEngine', 'get_engine', 'AIShopError', 'resolve_answer']
