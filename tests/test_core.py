@@ -44,6 +44,31 @@ class CoreTests(unittest.TestCase):
         self.assertEqual([p['amount_minor'] for p in result['parts'] if p['type'] == 'price'], [3600])
         self.assertFalse(result['learning']['saved'])
 
+    def test_explicit_small_package_cannot_receive_the_large_package_price(self):
+        self.engine.override={'reply':'Two 250 g packages cost [[total:tea-black:1:2]].','product_ids':['tea-black'],
+            'available_label':'Available','unavailable_label':'Unavailable','currency_label':'dollars'}
+        result=self.a.answer('What is the total for two 250 g packages?')
+        prices=[part for part in result['parts'] if part['type']=='price']
+        self.assertEqual(prices[0]['variant_index'],0);self.assertEqual(prices[0]['amount_minor'],2000)
+        self.engine.override['reply']='The 250 g package costs [[price:tea-black:1]].'
+        with self.assertRaises(AIShopError):self.a.answer('How much is the tea?')
+        self.engine.override['reply']='Compare 250 g at [[price:tea-black:0]] versus large at [[price:tea-black:1]].'
+        with self.assertRaises(AIShopError):self.a.answer('Compare 250 g with large.')
+
+    def test_punctuation_is_not_a_customer_facing_availability_label(self):
+        self.engine.override={'reply_language':'fa','reply':'سلام','product_ids':[],
+            'available_label':'موجود','unavailable_label':',','currency_label':'تومان'}
+        self.assertEqual(self.a.answer('سلام')['labels']['unavailable_label'],'ناموجود')
+
+    def test_persian_digits_and_spacing_keep_the_requested_package_price(self):
+        self.data['products'][0]['variants'][0]['unit']='بسته ۵۰۰ گرمی'
+        self.data['products'][0]['variants'][1]['unit']='بسته یک کیلویی'
+        self.a.sync_public_data(self.data)
+        self.engine.override={'reply_language':'fa','reply':'دو بسته 500 گرمی به مبلغ [[total:tea-black:1:2]] است.',
+            'product_ids':['tea-black'],'available_label':'موجود','unavailable_label':'ناموجود','currency_label':'دلار'}
+        result=self.a.answer('What is the total of two, size بسته ۵۰۰ گرمی?')
+        self.assertEqual([p['amount_minor'] for p in result['parts'] if p['type']=='price'],[2000])
+
     def test_only_allowlisted_public_fields_reach_the_model(self):
         self.data.update(orders=['PRIVATE_ORDER'], users=['PRIVATE_CUSTOMER'], admin={'password':'PRIVATE_PASSWORD'}, messages=['PRIVATE_MESSAGE'])
         self.data['products'][0]['internal_cost'] = 'PRIVATE_MARGIN'

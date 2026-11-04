@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import re
+import unicodedata
 
 from .catalogue import clean_text
 from .engine import get_engine
@@ -23,11 +24,35 @@ def validate_conversation(message, history):
     return message, clean
 
 
-def resolve_answer(answer, catalogue):
+def _unit_matches(value, variants):
+    def normalized(text):
+        chars=[]
+        for char in unicodedata.normalize('NFKC', text).casefold():
+            if unicodedata.category(char) in ('Cf','Mn','Me'): continue
+            if char.isdecimal(): char=str(unicodedata.decimal(char))
+            chars.append(char if char.isalnum() else ' ')
+        return ''.join(chars)
+    value=normalized(value);matches=set()
+    for index,variant in enumerate(variants):
+        compact=''.join(normalized(variant['unit']).split())
+        if len(compact)<3 and not (len(compact)>=2 and any(c.isdigit() for c in compact)): continue
+        pattern=r'(?<!\w)'+r'\s*'.join(re.escape(c) for c in compact)+r'(?!\w)'
+        if re.search(pattern,value): matches.add(index)
+    return matches
+
+
+def resolve_answer(answer, catalogue, *, message=''):
     """Never trust model-generated URLs, product names, price arithmetic or HTML."""
     try:
         reply = clean_text(answer.get('reply'), 2400)
         labels = {field: clean_text(answer.get(field), 50) for field in ('available_label', 'unavailable_label', 'currency_label')}
+        locale=str(answer.get('reply_language','')).casefold()
+        persian=locale in ('fa','fa-ir','persian','فارسی')
+        fallbacks={'available_label':'موجود' if persian else 'Available',
+                   'unavailable_label':'ناموجود' if persian else 'Unavailable',
+                   'currency_label':catalogue['currency']['label']}
+        for field,value in labels.items():
+            if not any(char.isalpha() for char in value): labels[field]=fallbacks[field]
         ids = answer.get('product_ids')
         if not isinstance(ids, list) or len(ids) > 8 or not all(isinstance(i, str) for i in ids):
             raise AIShopError('invalid_model_output', 503)
@@ -55,9 +80,21 @@ def resolve_answer(answer, catalogue):
                     if index is None or int(index) >= len(product['variants']): raise AIShopError('invalid_model_reference', 503)
                     if kind == 'price' and quantity is not None: raise AIShopError('invalid_model_reference', 503)
                     if kind == 'total' and (quantity is None or not 1 <= int(quantity) <= 99): raise AIShopError('invalid_model_reference', 503)
+                    selected_index=int(index)
+                    requested=_unit_matches(message,product['variants'])
+                    described=_unit_matches(reply,product['variants'])
+                    if len(described)==1 and selected_index not in described:
+                        # A uniquely named package in BOTH request and prose is
+                        # authoritative over the model's mistaken numeric index.
+                        # Ambiguous comparisons are not silently rewritten.
+                        monetary_count=len(re.findall(r'\[\[(?:price|total):'+re.escape(ident)+r':',reply))
+                        comparison=bool(re.search(r'\b(?:compare|comparison|versus|vs|cheaper|difference|or|مقایسه|فرق|یا|بین)\b',message+' '+reply,re.I))
+                        if requested==described and monetary_count==1 and not comparison: selected_index=next(iter(described))
+                        else: raise AIShopError('package_mismatch',503)
                     count = int(quantity) if quantity else 1
-                    parts.append({'type': 'price', 'id': ident, 'variant_index': int(index), 'quantity': count,
-                                  'amount_minor': product['variants'][int(index)]['price_minor'] * count,
+                    parts.append({'type': 'price', 'id': ident, 'variant_index': selected_index, 'quantity': count,
+                                  'unit':product['variants'][selected_index]['unit'],
+                                  'amount_minor': product['variants'][selected_index]['price_minor'] * count,
                                   'currency': catalogue['currency']['code'], 'decimals': catalogue['currency']['decimals']})
             end = match.end()
         tail = reply[end:]
@@ -120,7 +157,7 @@ class Assistant:
         consent = learning_consent is True and not private_text(message) and not any(private_text(h['content']) for h in history)
         answer = self.engine.reply(message, history, catalogue, learning_consent=consent)
         try:
-            result = resolve_answer(answer, catalogue)
+            result = resolve_answer(answer, catalogue, message=message)
         except AIShopError as error:
             if error.code == 'unsafe_model_output': return neutral()
             raise

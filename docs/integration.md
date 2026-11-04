@@ -46,6 +46,12 @@ For USD with two decimals, 1250 means **$12.50**. For IRT with zero decimals,
 currencies. The assistant resolves inline price and quantity references on the server.
 Shipping and final checkout charges remain the application's responsibility.
 
+Package indices are explicit in the model context. If both the request and reply
+uniquely name the same package label, that label takes precedence over a mistaken
+numeric index. A conflicting label without an unambiguous request is rejected;
+ambiguous comparisons are not silently rewritten. This reduces a common size/price
+mix-up but is not a guarantee of perfect natural-language interpretation.
+
 Unknown top-level and product fields are discarded, but a library cannot prove that
 arbitrary strings supplied by your application are public. Build an explicit public
 adapter; do not pass a database dump or a whole authenticated page. Exclude inactive,
